@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import shutil
 from ngawari import fIO
+from ngawari import vtkfilters
 from spydcmtk import spydcm
 import sys
 from pathlib import Path
 from typing import Any
 
+from kopare_masking import mask_external_air
+
 
 THIS_DIR = Path(__file__).parent
-DEFAULT_PARAMETER_FILE = os.path.join(THIS_DIR, "kopare_parameters.json")
+DEFAULT_PARAMETER_FILE = THIS_DIR / "kopare_parameters.json"
 LOGGER_NAME = "kopare"
 
 
@@ -31,15 +33,18 @@ class kopare_main:
     """Main processing class for a kopare run."""
 
     def __init__(
-        self,
-        input_directory: Path,
-        output_dir: Path,
-        parameters: dict[str, Any],
-    ) -> None:
+                    self,
+                    input_directory: Path,
+                    output_dir: Path,
+                    parameters: dict[str, Any],
+                ) -> None:
+        ##
         self.input_directory = input_directory
         self.output_dir = output_dir
         self.parameters = parameters
         self.logger = logging.getLogger(LOGGER_NAME)
+        self.VERBOSE = logging.getLogger().level == logging.DEBUG
+
 
     def run(self) -> int:
         """Run the processing pipeline."""
@@ -53,12 +58,31 @@ class kopare_main:
             return 1
 
         # TODO: Process the input directory
+        try:
+            dcmSeries = spydcm.dcmTK.DicomSeries.setFromDirectory(self.input_directory, HIDE_PROGRESSBAR=not self.VERBOSE)
+        except ValueError:
+            raise ValueError(f"ERROR: More than one DICOM series found in input directory: {self.input_directory}")
 
-        self.logger.info("Processing complete. Wrote output to %s", self.output_dir)
+        self.logger.info(f"Processing directory {self.input_directory}. Found {len(dcmSeries)} DICOMs")
+
+        vtiDict = dcmSeries.buildVTIDict()
+        if len(vtiDict) != 1:
+            raise ValueError(f"ERROR: More than one volume data found in input directory: {self.input_directory}")
+        imageData = list(vtiDict.values())[0]
+
+        fOut = fIO.writeVTKFile(imageData, self.output_dir / "imageData_original.vti")
+        self.logger.info(f"Wrote original image to {fOut}")
+
+        mask, threshold = mask_external_air(imageData, self.parameters["Median_filter_size"], "PixelData")
+        self.logger.info(f"External air threshold: {threshold}")
+        vtkfilters.setArrayFromNumpy(imageData, mask, "Labels", IS_3D=True)
+
+        # A_masked = vtkfilters.getArrayAsNumpy(imageData, "PixelData", RETURN_3D=True) * ~mask
+        # vtkfilters.setArrayFromNumpy(imageData, A_masked, "PixelData", IS_3D=True, SET_SCALAR=True)
+        fOut = fIO.writeVTKFile(imageData, self.output_dir / "imageData_masked.vti")
+        self.logger.info(f"Wrote masked image to {fOut}")
+
         return 0
-
-
-
 
 # =========================================================================================
 # =========================================================================================
@@ -86,12 +110,12 @@ def load_parameters(parameter_file: Path) -> dict[str, Any]:
 
 
 def resolve_output_dir(
-    output_dir_arg: str | None,
+    output_dir_arg: Path | None,
     input_dir: Path | None = None,
 ) -> Path:
     """Resolve output directory from CLI argument or default naming."""
     if output_dir_arg:
-        return Path(output_dir_arg).expanduser().resolve()
+        return output_dir_arg.expanduser().resolve()
     if input_dir is not None:
         return input_dir.parent 
     raise ValueError("No output directory provided.")
@@ -106,12 +130,12 @@ def main(argv: list[str] | None = None) -> int:
     configure_logging(verbose=args.verbose)
     logger = logging.getLogger(LOGGER_NAME)
 
-    parameter_file = Path(args.parameter_file).expanduser().resolve()
-    input_root: Path | None = None
+    input_directory = args.input_dir.expanduser().resolve()
+    parameter_file = args.parameter_file.expanduser().resolve()
 
     try:
-        validate_input_dir(Path(args.input_dir))
-        output_dir = resolve_output_dir(args.output_dir, Path(args.input_dir))
+        validate_input_dir(input_directory)
+        output_dir = resolve_output_dir(args.output_dir, input_directory)
         parameters = load_parameters(parameter_file)
         output_dir.mkdir(parents=True, exist_ok=True)
     except Exception as exc:
@@ -119,10 +143,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     app = kopare_main(
-        input_directory=args.input_dir,
+        input_directory=input_directory,
         output_dir=output_dir,
         parameters=parameters,
-        input_root=input_root,
     )
     return app.run()
 
@@ -142,23 +165,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "parameters from a JSON file and write results to an output directory."
         ),
     )
-    input_group = parser.add_mutually_exclusive_group(required=True)
-    input_group.add_argument(
+    parser.add_argument(
         "-i",
         "--input-dir",
+        type=Path,
+        required=True,
         help="Directory containing input DICOM files.",
     )
     parser.add_argument(
         "-p",
         "--parameter-file",
+        type=Path,
         default=DEFAULT_PARAMETER_FILE,
         help=f"Path to JSON parameter file (default: {DEFAULT_PARAMETER_FILE}).",
     )
     parser.add_argument(
         "-o",
         "--output-dir",
+        type=Path,
         default=None,
-        help="Output directory. Defaults to 'Path(<input_dir>).parent ",
+        help="Output directory. Defaults to '<input_dir>_output'.",
     )
     parser.add_argument(
         "-v",
