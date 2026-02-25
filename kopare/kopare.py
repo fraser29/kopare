@@ -1,0 +1,176 @@
+"""Command-line entry point and processing scaffold for kopare."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import shutil
+from ngawari import fIO
+from spydcmtk import spydcm
+import sys
+from pathlib import Path
+from typing import Any
+
+
+THIS_DIR = Path(__file__).parent
+DEFAULT_PARAMETER_FILE = os.path.join(THIS_DIR, "kopare_parameters.json")
+LOGGER_NAME = "kopare"
+
+
+def configure_logging(verbose: bool = False) -> None:
+    """Configure terminal logging."""
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
+
+
+class kopare_main:
+    """Main processing class for a kopare run."""
+
+    def __init__(
+        self,
+        input_directory: Path,
+        output_dir: Path,
+        parameters: dict[str, Any],
+    ) -> None:
+        self.input_directory = input_directory
+        self.output_dir = output_dir
+        self.parameters = parameters
+        self.logger = logging.getLogger(LOGGER_NAME)
+
+    def run(self) -> int:
+        """Run the processing pipeline."""
+        self.logger.info("Starting processing")
+        self.logger.info("Input directory: %s", self.input_directory)
+        self.logger.info("Output directory: %s", self.output_dir)
+        self.logger.info("Loaded %d parameter entries", len(self.parameters))
+
+        if not self.input_directory:
+            self.logger.error("No input files found to process.")
+            return 1
+
+        # TODO: Process the input directory
+
+        self.logger.info("Processing complete. Wrote output to %s", self.output_dir)
+        return 0
+
+
+
+
+# =========================================================================================
+# =========================================================================================
+
+
+# =========================================================================================
+# Input Validation
+# =========================================================================================
+def validate_input_dir(input_dir: Path) -> None:
+    """Validate that the input directory exists and is a directory."""
+    if not input_dir.exists():
+        raise FileNotFoundError(f"Input path does not exist: {input_dir}")
+    if not input_dir.is_dir():
+        raise NotADirectoryError(f"Input path is not a directory: {input_dir}")
+
+
+def load_parameters(parameter_file: Path) -> dict[str, Any]:
+    """Load and validate JSON parameters."""
+    if not parameter_file.exists():
+        raise FileNotFoundError(f"Parameter file not found: {parameter_file}")
+    if not parameter_file.is_file():
+        raise IsADirectoryError(f"Parameter path is not a file: {parameter_file}")
+
+    return fIO.parseJsonToDictionary(parameter_file)
+
+
+def resolve_output_dir(
+    output_dir_arg: str | None,
+    input_dir: Path | None = None,
+) -> Path:
+    """Resolve output directory from CLI argument or default naming."""
+    if output_dir_arg:
+        return Path(output_dir_arg).expanduser().resolve()
+    if input_dir is not None:
+        return input_dir.parent 
+    raise ValueError("No output directory provided.")
+
+
+
+# =========================================================================================
+# =========================================================================================
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point."""
+    args = parse_args(argv)
+    configure_logging(verbose=args.verbose)
+    logger = logging.getLogger(LOGGER_NAME)
+
+    parameter_file = Path(args.parameter_file).expanduser().resolve()
+    input_root: Path | None = None
+
+    try:
+        validate_input_dir(Path(args.input_dir))
+        output_dir = resolve_output_dir(args.output_dir, Path(args.input_dir))
+        parameters = load_parameters(parameter_file)
+        output_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        logger.error("ERROR: %s", exc)
+        return 1
+
+    app = kopare_main(
+        input_directory=args.input_dir,
+        output_dir=output_dir,
+        parameters=parameters,
+        input_root=input_root,
+    )
+    return app.run()
+
+
+# =========================================================================================
+# =========================================================================================
+
+# =========================================================================================
+# CLI Argument Parsing
+# =========================================================================================
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        prog="kopare",
+        description=(
+            "Process input DICOM files (in input directory) using "
+            "parameters from a JSON file and write results to an output directory."
+        ),
+    )
+    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument(
+        "-i",
+        "--input-dir",
+        help="Directory containing input DICOM files.",
+    )
+    parser.add_argument(
+        "-p",
+        "--parameter-file",
+        default=DEFAULT_PARAMETER_FILE,
+        help=f"Path to JSON parameter file (default: {DEFAULT_PARAMETER_FILE}).",
+    )
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        default=None,
+        help="Output directory. Defaults to 'Path(<input_dir>).parent ",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose (debug) logging.",
+    )
+    return parser.parse_args(argv)
+
+
+# =========================================================================================
+# Main Execution
+# =========================================================================================
+if __name__ == "__main__":
+    sys.exit(main())

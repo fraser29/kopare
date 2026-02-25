@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kopare"
+version = "0.0.1"
+description = "Mask MRI data."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    {name = "Fraser M. Callaghan", email = "callaghan.fm@gmail.com"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "vtk>=9.3",
+    "spydcmtk>=1.2.20",
+    "ngawari>=0.1.17",
+]
+license = { file = "LICENSE" }
+
+[project.scripts]
+kopare = "kopare.kopare:main"
+
+[tool.setuptools.packages.find]
+exclude = ["tests", "*.tests", "*.tests.*", "tests.*"]
+
+[tool.setuptools]
+include-package-data = true 
+
+[project.urls]
+Homepage = "https://github.com/fraser29/kopare"
+
