@@ -11,7 +11,7 @@ Mask external and internal air and invert ZTE MRI to generate pseudoCT images.
 
 Clone this repository: 
 ```bash
-git clone https://
+git clone https://github.com/fraser29/kopare.git
 ```
 
 Activate your virtual envirmonment and then install the project and requirements
@@ -22,9 +22,11 @@ pip install -e .
 
 ## Run 
 
+To see help information run:
 ```bash
 kopare -h
 ```
+
 
 
 ## Status
