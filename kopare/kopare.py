@@ -69,16 +69,16 @@ class kopare_main:
             raise ValueError(f"ERROR: More than one volume data found in input directory: {self.input_directory}")
         imageData = list(vtiDict.values())[0]
 
-        fOut = fIO.writeVTKFile(imageData, self.output_dir / "imageData_original.vti")
+        fOut = fIO.writeVTKFile(imageData, self.output_dir / "imageData_original.mha")
         self.logger.info(f"Wrote original image to {fOut}")
 
         mask, threshold = mask_external_air(imageData, self.parameters["Median_filter_size"], "PixelData")
         self.logger.info(f"External air threshold: {threshold}")
-        vtkfilters.setArrayFromNumpy(imageData, mask, "Labels", IS_3D=True)
+        vtkfilters.setArrayFromNumpy(imageData, mask, "Labels", IS_3D=True, SET_SCALAR=True)
 
         # A_masked = vtkfilters.getArrayAsNumpy(imageData, "PixelData", RETURN_3D=True) * ~mask
         # vtkfilters.setArrayFromNumpy(imageData, A_masked, "PixelData", IS_3D=True, SET_SCALAR=True)
-        fOut = fIO.writeVTKFile(imageData, self.output_dir / "imageData_masked.vti")
+        fOut = fIO.writeVTKFile(imageData, self.output_dir / "imageData_masked.mha")
         self.logger.info(f"Wrote masked image to {fOut}")
 
         return 0
