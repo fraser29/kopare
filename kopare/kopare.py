@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from kopare_masking import mask_external_air
+from kopare.kopare_masking import mask_external_air
 
 
 THIS_DIR = Path(__file__).parent

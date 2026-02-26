@@ -11,13 +11,19 @@ Mask external and internal air and invert ZTE MRI to generate pseudoCT images.
 
 Clone this repository: 
 ```bash
-git clone git@github.com:fraser29/kopare.git
+git clone https://
 ```
 
 Activate your virtual envirmonment and then install the project and requirements
 ```bash
 cd kopare
 pip install -e .
+```
+
+## Run 
+
+```bash
+kopare -h
 ```
 
 
@@ -32,8 +38,8 @@ Current status is a basic implementation with simple image filtering and thresho
 
 - [ ] Bias correction
 - [ ] Advanced masking
-    - [ ] Per slice external air masking
-    - [ ] 
+    - [ ] Per slice external air masking ? e.g. this may be an alternative to bias correction to accomodate inter-slice intensity variation
+    - [ ] Denoising - e.g. non-local means (in sci-kit image)
 - [ ] Inversion
 - [ ] Boundary smoothing
 
