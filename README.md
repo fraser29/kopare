@@ -27,12 +27,18 @@ kopare -h
 ```
 
 
-
 ## Status
 
 Beta. 
 
 Current status is a basic implementation with simple image filtering and thresholding. 
+
+*.MHA intermediary files are output - the full pipeline of producing masked, inverted, pseudoCT like DICOMS is not implemented. 
+
+### Know issues: 
+
+- [ ] 3D volume data output with incorrect format - probably spydcmtk issue. 
+
 
 ## Roadmap: 
 
@@ -42,6 +48,7 @@ Current status is a basic implementation with simple image filtering and thresho
     - [ ] Denoising - e.g. non-local means (in sci-kit image)
 - [ ] Inversion
 - [ ] Boundary smoothing
+- [ ] Write out DICOMS
 
 
 

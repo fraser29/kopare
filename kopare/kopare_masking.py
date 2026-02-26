@@ -12,7 +12,7 @@ def mask_external_air(imageData: vtk.vtkImageData, median_filter_size: int, arra
     threshold = threshold_otsu(A) * 0.5
     mask = A < threshold
     mask = keep_components_touching_side_faces(mask)
-    return mask, threshold
+    return mask, imageData_med, threshold
 
 
 def keep_components_touching_side_faces(mask: np.ndarray) -> np.ndarray:
