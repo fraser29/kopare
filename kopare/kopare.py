@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import shutil
 from ngawari import fIO
 from ngawari import vtkfilters
 from spydcmtk import spydcm

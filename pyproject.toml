@@ -19,6 +19,7 @@ dependencies = [
     "vtk>=9.3",
     "spydcmtk>=1.2.20",
     "ngawari>=0.1.17",
+    "scikit-image>=0.25.0"
 ]
 license = { file = "LICENSE" }
 
