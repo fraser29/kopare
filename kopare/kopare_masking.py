@@ -48,4 +48,4 @@ def keep_components_touching_side_faces(mask: np.ndarray) -> np.ndarray:
     if touching_labels.size == 0:
         return np.zeros_like(mask, dtype=bool)
 
-    return np.isin(labels, touching_labels).astype(int)
+    return np.isin(labels, touching_labels).astype(np.int16)
