@@ -10,6 +10,7 @@ from spydcmtk import spydcm
 import sys
 from pathlib import Path
 from typing import Any
+import numpy as np
 
 from kopare.kopare_masking import mask_external_air
 
@@ -68,6 +69,10 @@ class kopare_main:
         if len(vtiDict) != 1:
             raise ValueError(f"ERROR: More than one volume data found in input directory: {self.input_directory}")
         imageData = list(vtiDict.values())[0]
+        if len(dcmSeries) == 1:
+            # FIXME: this is an ugly work around - to fix in spydcmtk
+            A3 = vtkfilters.getArrayAsNumpy(imageData, "PixelData", RETURN_3D=True)
+            self.logger.info(f"THIS WILL NOT WORK - FIXME {A3.shape}")
 
         fOut = fIO.writeVTKFile(imageData, self.output_dir / "imageData_original.mha")
         self.logger.info(f"Wrote original image to {fOut}")
