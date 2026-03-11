@@ -17,9 +17,11 @@ classifiers = [
 ]
 dependencies = [
     "vtk>=9.3",
-    "spydcmtk>=1.2.21",
-    "ngawari>=0.1.18",
-    "scikit-image>=0.25.0"
+    "spydcmtk>=1.2.22",
+    "ngawari>=0.1.19",
+    "scikit-image>=0.25.0",
+    "SimpleITK>=2.5.3",
+    "PyWavelets>=1.8.0"
 ]
 license = { file = "LICENSE" }
 

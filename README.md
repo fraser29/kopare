@@ -5,7 +5,7 @@ Kōpare is Māori for "facial mask".
 
 ## Main role
 
-Mask external and internal air and invert ZTE MRI to generate pseudoCT images. 
+Mask external and internal air and invert ZTE MRI to generate pseudoCT DICOM images. 
 
 ## Installation
 
@@ -27,7 +27,14 @@ To see help information run:
 kopare -h
 ```
 
+## Parameters file
 
+The parameters file is a JSON file that contains the parameters for the kopare pipeline. It is located in the kopare directory and is called kopare_parameters.json.
+
+Possible parameters:
+
+- Median_filter_size: size of the median filter to apply to the volume data.
+- Output_format: format of the output files. Currently supported formats are: "mha", "vti", "nii", "nii.gz".
 
 ## Status
 
