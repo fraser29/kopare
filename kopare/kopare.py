@@ -79,10 +79,12 @@ class kopare_main:
         except ValueError:
             raise ValueError(f"ERROR: More than one DICOM series found in input directory: {self.input_directory}")
         self.logger.info("Found %d DICOMs", len(self.dcmSeries))
-        vtiDict = self.dcmSeries.buildVTIDict()
+        vtiDict = self.dcmSeries.buildVTIDict(TRUE_ORIENTATION=self.parameters.get("Write_true_orientation_image_data", False))
         if len(vtiDict) != 1:
             raise ValueError(f"ERROR: More than one volume data found in input directory: {self.input_directory}")
-        self.imageData_original = list(vtiDict.values())[0]
+        ii = list(vtiDict.values())[0]
+        scale = self.parameters.get("Scale", 1.0)
+        self.imageData_original = kopare_utils.scaleImageData(ii, scaleFactor=scale)
 
     # ----------------------------------------------------------------------------------------
     # Main processing
@@ -216,7 +218,7 @@ def main(argv: list[str] | None = None) -> int:
     app = kopare_main(
         input_directory=input_directory,
         output_dir=output_dir,
-        parameters=parameters,
+        parameters=parameters
     )
     return app.run()
 
@@ -239,7 +241,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-i", "--input-dir", type=Path, required=True, help="Directory containing input DICOM files.")
     parser.add_argument("-p", "--parameter-file", type=Path, default=DEFAULT_PARAMETER_FILE, help=f"Path to JSON parameter file (default: {DEFAULT_PARAMETER_FILE}).")
     parser.add_argument("-o", "--output-dir", type=Path, default=None, help="Output directory. Defaults to '<input_dir>_output'.")
-    parser.add_argument("-TO", "--true-orientation", action="store_true", help="Build masks in True orientation (slower but good for some debugging applications).")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (debug) logging.")
     return parser.parse_args(argv)
 

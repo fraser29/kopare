@@ -188,6 +188,13 @@ def keep_components_touching_side_faces(mask: np.ndarray) -> np.ndarray:
     return np.isin(labels, touching_labels).astype(np.int16)
 
 
+def scaleImageData(imageData, scaleFactor):
+    res = imageData.GetSpacing()
+    oo = imageData.GetOrigin()
+    imageData.SetSpacing([i*scaleFactor for i in res])
+    imageData.SetOrigin([i*scaleFactor for i in oo])
+    return imageData
+
 # =========================================================================================
 # Mask edge smoothin
 # =========================================================================================

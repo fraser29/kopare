@@ -1,5 +1,7 @@
 {
     "Write_intermediate_files": true,
+    "Write_true_orientation_image_data": true,
+    "Scale": 1000, 
     "Median_filter_size": 5,
     "Output_format": "vti",
     "BC_Number_of_fitting_levels": 0,
