@@ -4,6 +4,7 @@ import numpy as np
 from skimage.filters import threshold_otsu
 from skimage.measure import label
 from skimage import img_as_float
+from skimage.morphology import binary_erosion, binary_dilation
 from skimage.restoration import denoise_nl_means, estimate_sigma
 import SimpleITK as sitk
 from kopare.iterative_shrink_wrap import iterative_shrink_wrap
@@ -23,7 +24,7 @@ def mask_external_air(imageData: vtk.vtkImageData,
                     gaussian_smoothing_sigma: float = 0.0,
                     WORKING_DIR: str = None,
                     kopare_class = None,
-                    ) -> np.ndarray :
+                    ) -> vtk.vtkImageData :
     """
     Mask external air in a 3D volume data.
 
@@ -82,17 +83,12 @@ def mask_external_air(imageData: vtk.vtkImageData,
     face_contour = _build_air_contour(imageData_smooth, arrayName, airThreshold)
     if kopare_class is not None:
         kopare_class._write_intermediate_files(face_contour, f"face_contour")
-    mask = A < airThreshold
-    mask = keep_components_touching_side_faces(mask)
-    return mask
-
-
-def _subdivide(polydata, nSubdivisions: int = 2):
-    filter = vtk.vtkLinearSubdivisionFilter()
-    filter.SetInputData(polydata)
-    filter.SetNumberOfSubdivisions(nSubdivisions)
-    filter.Update()
-    return filter.GetOutput()
+    imageData_mask = vtkfilters.duplicateImageData(imageData)
+    vtkfilters.filterMaskImageBySurface(imageData_mask, face_contour, fill_value=1, arrayName="LabelMap")
+    # mask = A < airThreshold
+    # mask = keep_components_touching_side_faces(mask)
+    vtkfilters.setArrayAsScalars(imageData_mask, "LabelMap")
+    return imageData_mask
 
 
 def _build_air_contour(imageData: vtk.vtkImageData, arrayName: str, airThreshold: float) -> vtk.vtkPolyData:
@@ -101,54 +97,10 @@ def _build_air_contour(imageData: vtk.vtkImageData, arrayName: str, airThreshold
     """
     face_contour = vtkfilters.contourFilter(imageData, airThreshold)
     face_contour = vtkfilters.getConnectedRegionLargest(face_contour)
-
-    # Close contour at boundaries
-    image_bounds = imageData.GetBounds()
-    res = np.mean(imageData.GetSpacing())
-    shrinkSrc = vtkfilters.buildSphereSource(face_contour.GetCenter(), .35, 50)
-    face_contour_closed = vtkfilters.shrinkWrapData(face_contour, shrinkSrc)
-    face_contour_closed = _subdivide(face_contour_closed, 1)
-    face_contour_closed = vtkfilters.shrinkWrapData(face_contour, face_contour_closed)
-    face_contour_closed = _subdivide(face_contour_closed, 2)
-    face_contour_closed = vtkfilters.shrinkWrapData(face_contour, face_contour_closed)
-    face_contour_closed = _subdivide(face_contour_closed, 1)
-    face_contour_closed = vtkfilters.shrinkWrapData(face_contour, face_contour_closed)
-    # face_contour_closed = vtkfilters.decimateTris(face_contour_closed, 0.9)
-    # face_contour_closed = iterative_shrink_wrap(face_contour, 
-    #                                             movement_threshold=0.002,
-    #                                             max_iterations=50, 
-    #                                             sphere_resolution=80,
-    #                                             max_edge_length=0.02)
-    # MADE_FACE_CONTOUR = False
-    # for X, N in zip(image_bounds, [0, 0, 1, 1, 2, 2]):
-    #     normal = np.zeros(3)
-    #     normal[N] = 1
-    #     cp = np.array(imageData.GetCenter())
-    #     X1 = np.array(imageData.GetCenter())
-    #     X1[N] = X
-    #     dN = cp - X1
-    #     dN = dN / np.linalg.norm(dN)
-    #     X2 = X1 + dN * res*5.0
-    #     face_contour_slice = vtkfilters.sliceByPlane(face_contour, X2, normal)
-    #     if face_contour_slice.GetNumberOfPoints() > 1000:
-    #         MADE_FACE_CONTOUR = True
-    #         convexHull = vtkfilters.getPtsAsNumpy(vtkfilters.shrinkWrapData(face_contour_slice))
-    #         # pts = vtkfilters.getPtsAsNumpy(face_contour_slice)
-    #         # convexHull = vtkfilters.ftk.buildConvexHUll3D(pts, nPts=2000, TO_SPLINE=False)
-    #         convexHull2 = convexHull.copy()
-    #         convexHull2[:, N] = X
-    #         pp = vtkfilters.buildPolydataFromXYZ(np.concatenate([convexHull, convexHull2], axis=0))
-    #         ppW = vtkfilters.shrinkWrapData(pp)
-    #         vtkfilters.filterMaskImageBySurface(imageData, ppW, fill_value=airThreshold*2.0, arrayName="LabelMap")
-    # if MADE_FACE_CONTOUR:
-    #     ALM = vtkfilters.getArrayAsNumpy(imageData, "LabelMap", RETURN_3D=True)
-    #     AOrig = vtkfilters.getArrayAsNumpy(imageData, arrayName, RETURN_3D=True)
-    #     AOrig[ALM > 1] = airThreshold*5.0
-    #     vtkfilters.setArrayFromNumpy(imageData, AOrig, arrayName, IS_3D=True, SET_SCALAR=True)
-    # face_contour_closed = vtkfilters.contourFilter(imageData, airThreshold)
-    # face_contour_closed = vtkfilters.getConnectedRegionLargest(face_contour_closed)
+    face_contour_closed = iterative_shrink_wrap(face_contour, 
+                                                max_iterations=5, 
+                                                max_edge_length=0.01)
     return face_contour_closed
-
 
 
 def _get_air_threshold_from_slices(Array3D: np.ndarray) -> float:
@@ -234,6 +186,23 @@ def keep_components_touching_side_faces(mask: np.ndarray) -> np.ndarray:
         return np.zeros_like(mask, dtype=bool)
 
     return np.isin(labels, touching_labels).astype(np.int16)
+
+
+# =========================================================================================
+# Mask edge smoothin
+# =========================================================================================
+
+def _gaussianSmooth(imageData, standardDeviation, radiusFactor):
+    gaussian = vtkfilters.vtk.vtkImageGaussianSmooth()
+    gaussian.SetDimensionality(3)
+    gaussian.SetInputData(imageData)
+    gaussian.SetStandardDeviations(standardDeviation, standardDeviation, standardDeviation)
+    gaussian.SetRadiusFactors(radiusFactor, radiusFactor, radiusFactor)
+    gaussian.Update()
+    return gaussian.GetOutput()
+
+def smooth_at_mask_edge(image_array, mask_array):
+    pass
 
 
 # =========================================================================================

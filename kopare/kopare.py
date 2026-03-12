@@ -22,6 +22,8 @@ THIS_DIR = Path(__file__).parent
 DEFAULT_PARAMETER_FILE = THIS_DIR / "kopare_parameters.json"
 DEFAULT_LOGGER_NAME = "kopare"
 PERMITTED_OUTPUT_FORMATS = [".mha", ".vti", ".nii", ".nii.gz"]
+PixelData = "PixelData"
+LabelMap = "LabelMap"
 
 def configure_logging(verbose: bool = False) -> None:
     """Configure terminal logging."""
@@ -96,15 +98,14 @@ class kopare_main:
 
         # Set up parameters
         medFilterSize = self.parameters["Median_filter_size"]
-        output_format = self.parameters["Output_format"].lower()
 
         self._write_intermediate_files(self.imageData_original, f"imageData_original")
 
 
         ## THIS IS THE MAIN FUNCTION CALL - BIAS FIELD CORRECTION, MEDIAN FILTERING, AND EXTERNAL AIR MASKING
-        mask3D_numpy = kopare_utils.mask_external_air(imageData=self.imageData_original, 
+        image_mask_external = kopare_utils.mask_external_air(imageData=self.imageData_original, 
                                                         median_filter_size=medFilterSize, 
-                                                        arrayName="PixelData", 
+                                                        arrayName=PixelData, 
                                                         numberFittingLevels=self.parameters["BC_Number_of_fitting_levels"], 
                                                         maxIterations=self.parameters["BC_Maximum_number_of_iterations"], 
                                                         shrinkFactor=self.parameters["BC_Shrink_factor"], 
@@ -115,12 +116,19 @@ class kopare_main:
 
 
 
-        image_mask = vtkfilters.duplicateImageData(self.imageData_original)
-        vtkfilters.setArrayFromNumpy(image_mask, mask3D_numpy, "Labels", IS_3D=True, SET_SCALAR=True)
-
-        self._write_intermediate_files(image_mask, f"imageData_mask")
+        # image_mask = vtkfilters.duplicateImageData(self.imageData_original)
+        # vtkfilters.setArrayFromNumpy(image_mask, mask3D_numpy, "Labels", IS_3D=True, SET_SCALAR=True)
+        self._write_intermediate_files(image_mask_external, f"imageData_mask")
 
         # TODO: internal air mask, invert, smooth edges, write modified DICOMS 
+
+        A = vtkfilters.getArrayAsNumpy(self.imageData_original, PixelData)
+        AME = vtkfilters.getArrayAsNumpy(image_mask_external, LabelMap)
+        A[AME<0.5] = 0.0
+        image_masked = vtkfilters.duplicateImageData(self.imageData_original)
+        vtkfilters.setArrayFromNumpy(image_masked, A, PixelData, SET_SCALAR=True)
+
+        self._write_intermediate_files(image_masked, f"imageData_masked")
 
         return 0
 
@@ -224,6 +232,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-i", "--input-dir", type=Path, required=True, help="Directory containing input DICOM files.")
     parser.add_argument("-p", "--parameter-file", type=Path, default=DEFAULT_PARAMETER_FILE, help=f"Path to JSON parameter file (default: {DEFAULT_PARAMETER_FILE}).")
     parser.add_argument("-o", "--output-dir", type=Path, default=None, help="Output directory. Defaults to '<input_dir>_output'.")
+    parser.add_argument("-TO", "--true-orientation", action="store_true", help="Build masks in True orientation (slower but good for some debugging applications).")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (debug) logging.")
     return parser.parse_args(argv)
 

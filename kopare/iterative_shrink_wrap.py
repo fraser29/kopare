@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
-
+from ngawari import vtkfilters
 import numpy as np
 import vtk
 from vtk.util import numpy_support
@@ -156,11 +156,71 @@ def _split_edge(
     return new_idx
 
 
+def _subdivide(polydata, nSubdivisions: int = 2):
+    filter = vtk.vtkLinearSubdivisionFilter()
+    filter.SetInputData(polydata)
+    filter.SetNumberOfSubdivisions(nSubdivisions)
+    filter.Update()
+    return filter.GetOutput()
+
+def _getListEdgeLengths(polydata):
+    pts_list, tris_raw = _polydata_to_arrays(polydata)
+    tris_list: list[list[int] | None] = list(tris_raw)
+    edge_lengths = []
+    for tri in tris_list:
+        if tri is None:
+            continue
+        for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[0], tri[2])):
+            key: tuple[int, int] = (min(a, b), max(a, b))
+            length = np.linalg.norm(pts_list[key[1]] - pts_list[key[0]])
+            edge_lengths.append(length)
+    return edge_lengths
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+def iterative_shrink_wrap(target_surface: vtk.vtkPolyData,
+                            initial_wrap: Optional[vtk.vtkPolyData] = None,
+                            max_edge_length: float = None,
+                            max_iterations: int = 5, ):
+    
+    bounds = target_surface.GetBounds()
+    maxBound = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4])
+    if initial_wrap is None:
+        center = [
+            (bounds[0] + bounds[1]) * 0.5,
+            (bounds[2] + bounds[3]) * 0.5,
+            (bounds[4] + bounds[5]) * 0.5,
+        ]
+        radius = 0.8 * maxBound
+        src = vtk.vtkSphereSource()
+        src.SetCenter(center)
+        src.SetRadius(radius)
+        src.SetPhiResolution(20)
+        src.SetThetaResolution(20)
+        src.Update()
+        initial_wrap = src.GetOutput()
 
-def iterative_shrink_wrap(
+    if max_edge_length is None:
+        max_edge_length = 0.01 * maxBound
+        logger.info(f"Using automated max_edge_length {max_edge_length}")
+    c0 = 0
+    wrapped_surface = initial_wrap
+    for c0 in range(max_iterations):
+        c0 += 1
+        wrapped_surface = vtkfilters.shrinkWrapData(target_surface, wrapped_surface)
+        wrapped_surface = _subdivide(wrapped_surface, 1)
+        edgelengths = _getListEdgeLengths(wrapped_surface)
+        if np.max(edgelengths) < max_edge_length:
+            logger.info(f"iterative_shrink_wrap convergence - no edge length > {max_edge_length}.")        
+
+    else:
+        logger.warning(f"iterative_shrink_wrap reached {max_iterations} max_iterations without full convergence.")
+
+    return wrapped_surface
+
+
+def iterative_shrink_wrap2(
     target_surface: vtk.vtkPolyData,
     initial_wrap: Optional[vtk.vtkPolyData] = None,
     max_edge_length: float = None,
