@@ -1,10 +1,10 @@
 from ngawari import vtkfilters
 import vtk
 import numpy as np
-from skimage.filters import threshold_otsu
+from skimage.filters import threshold_otsu, rank
 from skimage.measure import label
 from skimage import img_as_float
-from skimage.morphology import binary_erosion, binary_dilation
+from skimage.morphology import binary_erosion, ball
 from skimage.restoration import denoise_nl_means, estimate_sigma
 import SimpleITK as sitk
 from kopare.iterative_shrink_wrap import iterative_shrink_wrap
@@ -22,7 +22,7 @@ def mask_external_air(imageData: vtk.vtkImageData,
                     denoising_patch_size: int = 9,
                     denoising_patch_distance: int = 5,
                     gaussian_smoothing_sigma: float = 0.0,
-                    WORKING_DIR: str = None,
+                    n_shrink_wrap_iterations: int = 5,
                     kopare_class = None,
                     ) -> vtk.vtkImageData :
     """
@@ -80,7 +80,7 @@ def mask_external_air(imageData: vtk.vtkImageData,
 
     A = vtkfilters.getArrayAsNumpy(imageData_smooth, arrayName, RETURN_3D=True)
     airThreshold = _get_air_threshold_from_slices(A)
-    face_contour = _build_air_contour(imageData_smooth, arrayName, airThreshold)
+    face_contour = _build_air_contour(imageData_smooth, airThreshold, n_shrink_wrap_iterations)
     if kopare_class is not None:
         kopare_class._write_intermediate_files(face_contour, f"face_contour")
     imageData_mask = vtkfilters.duplicateImageData(imageData)
@@ -91,14 +91,14 @@ def mask_external_air(imageData: vtk.vtkImageData,
     return imageData_mask
 
 
-def _build_air_contour(imageData: vtk.vtkImageData, arrayName: str, airThreshold: float) -> vtk.vtkPolyData:
+def _build_air_contour(imageData: vtk.vtkImageData, airThreshold: float, n_shrink_wrap_iterations: int) -> vtk.vtkPolyData:
     """
     Build a contour of the air in the volume data.
     """
     face_contour = vtkfilters.contourFilter(imageData, airThreshold)
     face_contour = vtkfilters.getConnectedRegionLargest(face_contour)
     face_contour_closed = iterative_shrink_wrap(face_contour, 
-                                                max_iterations=5, 
+                                                max_iterations=n_shrink_wrap_iterations, 
                                                 max_edge_length=0.01)
     return face_contour_closed
 
@@ -201,8 +201,34 @@ def _gaussianSmooth(imageData, standardDeviation, radiusFactor):
     gaussian.Update()
     return gaussian.GetOutput()
 
-def smooth_at_mask_edge(image_array, mask_array):
-    pass
+
+def _get_edge_mask(mask_array, nErode_iter):
+    bw = (mask_array > 0.5).astype(int)
+    bw_e = binary_erosion(bw, ball(nErode_iter))
+    # if nErode_iter > 1:
+    #     for _ in range(nErode_iter):
+    #         bw_e = binary_erosion(bw_e)
+    edge_bw = np.logical_and(bw, ~bw_e)
+    return edge_bw
+
+
+def smooth_at_mask_edge(imageData, imageData_mask, arrayName, arrayNameMask, n_iterations):
+    AImage = vtkfilters.getArrayAsNumpy(imageData, arrayName, RETURN_3D=True)
+    Amask = vtkfilters.getArrayAsNumpy(imageData_mask, arrayNameMask, RETURN_3D=True)
+    edge_bw = _get_edge_mask(mask_array=Amask, nErode_iter=n_iterations)
+    AImageMax = rank.maximum(AImage, footprint=ball(n_iterations))
+    # image_GS = _gaussianSmooth(imageData, 2.0, 1.5)
+    # if kopare_class is not None:
+    #     kopare_class._write_intermediate_files(image_GS, f"gaussian-smooth")
+    # AGS = vtkfilters.getArrayAsNumpy(image_GS, arrayName, RETURN_3D=True)
+    AImage[edge_bw] = AImageMax[edge_bw]
+    vtkfilters.setArrayFromNumpy(imageData, AImage, arrayName, SET_SCALAR=True, IS_3D=True)
+    return imageData
+
+    
+
+
+
 
 
 # =========================================================================================

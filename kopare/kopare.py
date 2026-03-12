@@ -112,6 +112,7 @@ class kopare_main:
                                                         denoising_alpha=self.parameters["Denoising_alpha"],
                                                         denoising_patch_size=self.parameters["Denoising_patch_size"],
                                                         denoising_patch_distance=self.parameters["Denoising_patch_distance"],
+                                                        n_shrink_wrap_iterations=self.parameters["n_shrink_wrap_iterations"],
                                                         kopare_class=self)
 
 
@@ -120,15 +121,21 @@ class kopare_main:
         # vtkfilters.setArrayFromNumpy(image_mask, mask3D_numpy, "Labels", IS_3D=True, SET_SCALAR=True)
         self._write_intermediate_files(image_mask_external, f"imageData_mask")
 
-        # TODO: internal air mask, invert, smooth edges, write modified DICOMS 
 
         A = vtkfilters.getArrayAsNumpy(self.imageData_original, PixelData)
         AME = vtkfilters.getArrayAsNumpy(image_mask_external, LabelMap)
         A[AME<0.5] = 0.0
         image_masked = vtkfilters.duplicateImageData(self.imageData_original)
         vtkfilters.setArrayFromNumpy(image_masked, A, PixelData, SET_SCALAR=True)
-
         self._write_intermediate_files(image_masked, f"imageData_masked")
+
+        # # TODO: internal air mask, invert, smooth edges, write modified DICOMS 
+        # image_masked_smoothed = kopare_utils.smooth_at_mask_edge(image_masked, 
+        #                                                          image_mask_external, 
+        #                                                          PixelData, 
+        #                                                          LabelMap, 
+        #                                                          n_iterations=self.parameters["EdgeSmoothing_nIterations"])
+        # self._write_intermediate_files(image_masked_smoothed, f"imageData_masked_smoothed")
 
         return 0
 
