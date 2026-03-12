@@ -33,8 +33,36 @@ The parameters file is a JSON file that contains the parameters for the kopare p
 
 Possible parameters:
 
-- Median_filter_size: size of the median filter to apply to the volume data.
+- Median_filter_size: 
+- Write_intermediate_files: bool - set true to write out intermediary working files 
 - Output_format: format of the output files. Currently supported formats are: "mha", "vti", "nii", "nii.gz".
+- Write_true_orientation_image_data: Only use for intermediate output files - will not write DICOMS
+- Scale: Use with Write_intermediate_files to scale files (1=mm, 1000=m)
+
+**TODO**
+    "BC_Number_of_fitting_levels": bias correction number of fitting levels,
+    "BC_Maximum_number_of_iterations": bias correction number of iterations,
+    "BC_Shrink_factor": bias correction shrink factor,
+    "Denoising_alpha": denoising (non-local means) alpha (0 = no denoising),
+    "Denoising_patch_size": 9,
+    "Denoising_patch_distance": 5,
+    "n_shrink_wrap_iterations": number of shrink wrap iterations for face mask (keep below 8),
+    "EdgeSmoothing_nIterations": 7 - not used currently
+
+### Default parameters
+    "Write_intermediate_files": true,
+    "Write_true_orientation_image_data": true,
+    "Scale": 1000, 
+    "Median_filter_size": 5,
+    "Output_format": "vti",
+    "BC_Number_of_fitting_levels": 0,
+    "BC_Maximum_number_of_iterations": 50,
+    "BC_Shrink_factor": 3,
+    "Denoising_alpha": 0,
+    "Denoising_patch_size": 9,
+    "Denoising_patch_distance": 5,
+    "n_shrink_wrap_iterations": 5,
+    "EdgeSmoothing_nIterations": 7
 
 ## Status
 
