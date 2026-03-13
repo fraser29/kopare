@@ -1,6 +1,6 @@
 {
     "Write_intermediate_files": true,
-    "Write_true_orientation_image_data": true,
+    "Write_true_orientation_image_data": false,
     "Scale": 1000, 
     "Median_filter_size": 5,
     "Output_format": "vti",
@@ -10,6 +10,6 @@
     "Denoising_alpha": 0,
     "Denoising_patch_size": 9,
     "Denoising_patch_distance": 5,
-    "n_shrink_wrap_iterations": 5,
+    "n_shrink_wrap_iterations": 6,
     "EdgeSmoothing_nIterations": 7
 }

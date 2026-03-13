@@ -92,7 +92,7 @@ def _validate_inputs(image: np.ndarray, body_mask: np.ndarray) -> tuple[NDArrayF
 def estimate_air_threshold_from_external_air(
     image: np.ndarray,
     body_mask: np.ndarray,
-    external_air_percentile: float = 99.5,
+    external_air_percentile: float = 95.0,
     body_low_percentile: float = 15.0,
     blend_weight_external: float = 0.7,
 ) -> float:
@@ -109,10 +109,12 @@ def estimate_air_threshold_from_external_air(
 
     t_external = np.percentile(external_air, external_air_percentile)
     t_body_low = np.percentile(inside_body, body_low_percentile)
-    return float(
+    thres = float(
         blend_weight_external * t_external
         + (1.0 - blend_weight_external) * t_body_low
     )
+    # print(f"Estimated air threshold = {thres}")
+    return thres
 
 
 def _postprocess_internal_air_mask(

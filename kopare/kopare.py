@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-from ngawari import fIO, isVTP
+from ngawari import fIO
 from ngawari import vtkfilters
 import vtk
 from spydcmtk import spydcm
