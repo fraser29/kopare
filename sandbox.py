@@ -172,8 +172,19 @@ def test_wrap():
     face_contour = vtkfilters.contourFilter(ii, 100.0)
     face_contour = vtkfilters.getConnectedRegionLargest(face_contour)
     sw = vtkfilters.shrinkWrapData(face_contour)
-    fOut = fIO.writeVTKFile(sw, iif[:-4]+"_sw.stl")
-    print(fOut)
+
+    # Detect and label any planar cut faces on both the shrinkwrap and the
+    # original isosurface contour.
+    for tag, mesh in [("sw", sw)]:
+        labeled, is_cut, cuts = kopare_utils.detect_and_label_cut_faces(mesh)
+        print(f"[{tag}] is_cut={is_cut}  n_cuts_found={len(cuts)}")
+        for c in cuts:
+            print(f"  cut {c['label']}: flat_fraction={c['flat_area_fraction']:.3f}"
+                  f"  n_cells={c['n_cut_cells']}"
+                  f"  normal={np.round(c['plane_normal'], 3)}")
+        out_path = iif[:-4] + f"_{tag}_cut_labeled.vtp"
+        fOut = fIO.writeVTKFile(labeled, out_path)
+        print(f"  Written: {fOut}")
 
 
 
