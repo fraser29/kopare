@@ -33,57 +33,32 @@ The parameters file is a JSON file that contains the parameters for the kopare p
 
 Possible parameters:
 
-- Median_filter_size: 
-- Write_intermediate_files: bool - set true to write out intermediary working files 
-- Output_format: format of the output files. Currently supported formats are: "mha", "vti", "nii", "nii.gz".
-- Write_true_orientation_image_data: Only use for intermediate output files - will not write DICOMS
-- Scale: Use with Write_intermediate_files to scale files (1=mm, 1000=m)
-
-**TODO**
-    "BC_Number_of_fitting_levels": bias correction number of fitting levels,
-    "BC_Maximum_number_of_iterations": bias correction number of iterations,
-    "BC_Shrink_factor": bias correction shrink factor,
-    "Denoising_alpha": denoising (non-local means) alpha (0 = no denoising),
-    "Denoising_patch_size": 9,
-    "Denoising_patch_distance": 5,
-    "n_shrink_wrap_iterations": number of shrink wrap iterations for face mask (keep below 8),
-    "EdgeSmoothing_nIterations": 7 - not used currently
-
-### Default parameters
-    "Write_intermediate_files": true,
-    "Write_true_orientation_image_data": true,
-    "Scale": 1000, 
-    "Median_filter_size": 5,
-    "Output_format": "vti",
-    "BC_Number_of_fitting_levels": 0,
-    "BC_Maximum_number_of_iterations": 50,
-    "BC_Shrink_factor": 3,
-    "Denoising_alpha": 0,
-    "Denoising_patch_size": 9,
-    "Denoising_patch_distance": 5,
-    "n_shrink_wrap_iterations": 5,
-    "EdgeSmoothing_nIterations": 7
+- "Write_intermediate_files": bool - set true to write out intermediary working files ,
+- "Write_true_orientation_image_data": Useful for registration. Only use for intermediate output files - will not write DICOMS
+- "Scale": Scale the input image data by this factor. Useful for converting from mm to m. [default=1000.0 ]
+- "Median_filter_size": Size of the median filter to apply to the volume data. [default=0]
+- "Output_format": format of the output files. Currently supported formats are: "mha", "vti", "nii", "nii.gz".
+- "BC_Number_of_fitting_levels": Number of fitting levels for the bias field correction. [default=6]
+- "BC_Maximum_number_of_iterations": Maximum number of iterations for the bias field correction. [default=150]
+- "BC_Shrink_factor": Shrink factor for the bias field correction. [default=4]
+- "Denoising_alpha": Alpha parameter for the non-local means denoising. [default=5]
+- "Denoising_patch_size": Patch size for the non-local means denoising. [default=9]
+- "Denoising_patch_distance": Patch distance for the non-local means denoising. [default=5]
+- "Gaussian_smoothing_sigma": Sigma parameter for the Gaussian smoothing. [default=2.5]
+- "Gaussian_smoothing_radius_factor": Radius factor for the Gaussian smoothing. [default=1.5]
+- "n_shrink_wrap_iterations": Number of shrink wrap iterations for the face mask. [default=6]
+- "EdgeSmoothing_nIterations": Number of iterations for the edge smoothing. [default=7]
 
 ## Status
 
 Beta. 
 
-Current status is a basic implementation with simple image filtering and thresholding. 
-
-*.MHA intermediary files are output - the full pipeline of producing masked, inverted, pseudoCT like DICOMS is not implemented. 
-
-### Know issues: 
-
-- [ ] 3D volume data output with incorrect format - probably spydcmtk issue. 
-
-
 ## Roadmap: 
 
-- [ ] Bias correction
-- [ ] Advanced masking
-    - [ ] Per slice external air masking ? e.g. this may be an alternative to bias correction to accomodate inter-slice intensity variation
-    - [ ] Denoising - e.g. non-local means (in sci-kit image)
-- [ ] Inversion
+- [x] Bias correction
+- [x] Advanced masking
+    - [x] Denoising - e.g. non-local means (in sci-kit image)
+- [x] Inversion
 - [ ] Boundary smoothing
 - [ ] Write out DICOMS
 

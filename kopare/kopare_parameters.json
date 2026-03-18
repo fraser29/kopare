@@ -5,11 +5,34 @@
     "Median_filter_size": 5,
     "Output_format": "vti",
     "BC_Number_of_fitting_levels": 0,
-    "BC_Maximum_number_of_iterations": 50,
-    "BC_Shrink_factor": 3,
+    "BC_Maximum_number_of_iterations": 150,
+    "BC_Shrink_factor": 4,
     "Denoising_alpha": 0,
     "Denoising_patch_size": 9,
     "Denoising_patch_distance": 5,
+    "Gaussian_smoothing_sigma": 0,
+    "Gaussian_smoothing_radius_factor": 1.5,
     "n_shrink_wrap_iterations": 6,
-    "EdgeSmoothing_nIterations": 7
+    "EdgeSmoothing_nIterations": 7,
+    "Sinus_detection_method": "thick_region_filter",
+    "Sinus_airway_parameters": {
+        "persistent_dark_after_smoothing": {
+            "sigma_large": 2.5,
+            "min_region_size": 200,
+            "hole_size": 300,
+            "closing_radius": 1
+        },
+        "threshold_external_reference": {
+            "threshold": 0.5,
+            "min_region_size": 200,
+            "hole_size": 300,
+            "closing_radius": 1
+        },
+        "thick_region_filter": {
+            "threshold": 0.5,
+            "opening_radius": 3,
+            "regrow_radius": 0,
+            "min_region_size": 400
+        }
+    }
 }

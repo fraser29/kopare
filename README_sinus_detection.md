@@ -12,7 +12,7 @@ Module path: `kopare/sinus_detection.py`
 - `body_mask`: same shape, where `1` = inside body and `0` = external air
 - `manual_mask` (for testing): same shape, binary sinus/airway ground truth
 
-## 1) Run one segmentation
+## 1)  segmentation
 
 ```python
 import numpy as np
@@ -34,7 +34,7 @@ Available methods:
 - `thick_region_filter`
 - `persistent_dark_after_smoothing` (default)
 
-## 2) Benchmark methods on dataset
+## 2) Benchmark methods
 
 ```python
 from kopare.sinus_detection import benchmark_algorithms
@@ -52,7 +52,7 @@ Each summary includes:
 - `dice_mean`, `dice_std`, `dice_median`
 - `iou_mean`, `precision_mean`, `recall_mean`, `specificity_mean`
 
-## 3) Tune parameters with grid search
+## 3) Optimisation
 
 ```python
 from kopare.sinus_detection import grid_search_method_on_cases
@@ -75,7 +75,7 @@ print("Best params:", search["best"]["params"])
 print("Best score:", search["best"]["score"])
 ```
 
-## 4) Tune and compare multiple methods
+## 4) Optimisation multiple methods
 
 ```python
 from kopare.sinus_detection import grid_search_algorithms
@@ -108,10 +108,3 @@ print("Best method:", all_search["best_overall"]["method"])
 print("Best params:", all_search["best_overall"]["best_params"])
 print("Best Dice mean:", all_search["best_overall"]["best_score"])
 ```
-
-## Notes
-
-- If your manual masks include only sinus/airway regions (not external air),
-  these functions are directly compatible.
-- The default method is usually a good first option because it prefers regions
-  that stay dark after smoothing (often reducing thin-bone false positives).

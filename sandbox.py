@@ -8,11 +8,12 @@ from kopare import kopare_utils
 from ngawari import fIO, vtkfilters
 import os
 import matplotlib.pyplot as plt
+from spydcmtk import spydcm
 
 PixelData = "PixelData"
 LabelMap = "LabelMap"
 
-ROOT_DIR = "/PROJECTS/BlackBone"
+ROOT_DIR = "/Volume/WORK/KISPI/KMRB/"
 
 def read_subject_data(N):
     internal_air_file = f"{ROOT_DIR}//BB{N:06d}/PROCESSED/internal-air.vti"
@@ -150,6 +151,31 @@ def test_BC():
     fOut = fIO.writeVTKFile(iiBC, iif[:-4]+"_BC.vti")
     print(fOut)
 
+def test_inversion():
+    dcmDir = "/Volume/WORK/KISPI/KMRB/BB000001/RAW/DICOM/Ortho_7_2d20b7ca-14e4-43_20240418/SE18_3d_overview_RR"
+    outDir = "/Volume/WORK/KISPI/KMRB/BB000001/PROCESSED"
+    dcmSeries = spydcm.dcmTK.DicomSeries.setFromDirectory(dcmDir)
+    vtiDict = dcmSeries.buildVTIDict()
+    ii = list(vtiDict.values())[0]
+    fOut = fIO.writeVTKFile(ii, os.path.join(outDir, "imageData_original.vti"))
+    print(fOut)
+    iiInv = kopare_utils.signalLogInverse(ii, PixelData)
+
+    # AI = contrastStretch_percentile(AI)
+    fOut = fIO.writeVTKFile(iiInv, os.path.join(outDir, "imageData_original_Inv.vti"))
+    print(fOut)
+
+
+def test_wrap():
+    iif = f"{ROOT_DIR}/BB000001/PROCESSED/imageData_smooth.vti"
+    ii = fIO.readVTKFile(iif)
+    face_contour = vtkfilters.contourFilter(ii, 100.0)
+    face_contour = vtkfilters.getConnectedRegionLargest(face_contour)
+    sw = vtkfilters.shrinkWrapData(face_contour)
+    fOut = fIO.writeVTKFile(sw, iif[:-4]+"_sw.stl")
+    print(fOut)
+
+
 
 if __name__ == "__main__":
     # run_test(3)
@@ -158,4 +184,6 @@ if __name__ == "__main__":
     # runOptimisation()
     # run_test_A(3)
     # run_test_B(3)
-    test_BC()
+    # test_BC()
+    # test_inversion()
+    test_wrap()

@@ -6,89 +6,35 @@ from skimage.measure import label
 from skimage import img_as_float
 from skimage.morphology import binary_erosion, ball
 from skimage.restoration import denoise_nl_means, estimate_sigma
+from skimage import exposure
 import SimpleITK as sitk
 from kopare.iterative_shrink_wrap import iterative_shrink_wrap
 
 
 def mask_external_air(imageData: vtk.vtkImageData, 
-                    median_filter_size: int, 
                     arrayName: str,
-                    numberFittingLevels: int = 4,
-                    maxIterations: int = 50,
-                    shrinkFactor: int | list[int] | None = None,
-                    maskImage: vtk.vtkImageData | None = None,
-                    arrayNameOut: str | None = None,
-                    denoising_alpha: float = 5,
-                    denoising_patch_size: int = 9,
-                    denoising_patch_distance: int = 5,
-                    gaussian_smoothing_sigma: float = 0.0,
                     n_shrink_wrap_iterations: int = 5,
-                    kopare_class = None,
                     ) -> vtk.vtkImageData :
     """
     Mask external air in a 3D volume data.
 
     Args:
         imageData: vtkImageData object containing the volume data.
-        median_filter_size: size of the median filter to apply to the volume data.
         arrayName: name of the array containing the volume data.
-        numberFittingLevels: number of fitting levels. Default is 4.
-        maxIterations: maximum number of iterations. Default is 50.
-        shrinkFactor: shrink factor. Default is None.
-        maskImage: vtkImageData object containing the mask. Default is None.
-        arrayNameOut: name of the array to set in the vtkImageData object. Default is None.
-        denoising_alpha: alpha parameter for the non-local means denoising. Default is 5.
-        denoising_patch_size: patch size for the non-local means denoising. Default is 9.
-        denoising_patch_distance: patch distance for the non-local means denoising. Default is 5.
-        gaussian_smoothing_sigma: sigma parameter for the Gaussian smoothing. Default is 0.
+        n_shrink_wrap_iterations: number of iterations for the shrink wrap algorithm. Default is 5.
     Returns:
         mask: numpy array containing the mask.
     """
+
     A = vtkfilters.getArrayAsNumpy(imageData, arrayName, RETURN_3D=True)
-    imageData = vtkfilters.duplicateImageData(imageData)
-    if denoising_alpha > 0:
-        A = denoise3DA(A, denoising_alpha, denoising_patch_size, denoising_patch_distance)
-    vtkfilters.setArrayFromNumpy(imageData, A, arrayName, IS_3D=True, SET_SCALAR=True)
-    if (kopare_class is not None) and (denoising_alpha > 0):
-        kopare_class._write_intermediate_files(imageData, f"imageData_denoised")
-
-
-    if numberFittingLevels > 0:
-        imagedata_BC = biasFieldCorrection(imageData=imageData, 
-                                        arrayName=arrayName, 
-                                        numberFittingLevels=numberFittingLevels, 
-                                        maxIterations=maxIterations, 
-                                        shrinkFactor=shrinkFactor, 
-                                        maskImage=maskImage, 
-                                        arrayNameOut=arrayNameOut)
-        if kopare_class is not None:
-            kopare_class._write_intermediate_files(imagedata_BC, f"imagedata_BC")
-    else:
-        imagedata_BC = imageData
-
-    SMOOTHED = False
-    if median_filter_size > 0:
-        imageData_smooth = vtkfilters.filterVtiMedian(vtiObj=imagedata_BC, filterKernalSize=median_filter_size)
-        SMOOTHED = True
-    elif gaussian_smoothing_sigma > 0:
-        imageData_smooth = vtkfilters.filterVtiGaussian(vtiObj=imagedata_BC, sigma=gaussian_smoothing_sigma)
-        SMOOTHED = True
-    else:
-        imageData_smooth = imagedata_BC
-    if kopare_class is not None and SMOOTHED:
-        kopare_class._write_intermediate_files(imageData_smooth, f"imageData_smooth")
-
-    A = vtkfilters.getArrayAsNumpy(imageData_smooth, arrayName, RETURN_3D=True)
     airThreshold = _get_air_threshold_from_slices(A)
-    face_contour = _build_air_contour(imageData_smooth, airThreshold, n_shrink_wrap_iterations)
-    if kopare_class is not None:
-        kopare_class._write_intermediate_files(face_contour, f"face_contour")
+    face_contour = _build_air_contour(imageData, airThreshold, n_shrink_wrap_iterations)
     imageData_mask = vtkfilters.duplicateImageData(imageData)
     vtkfilters.filterMaskImageBySurface(imageData_mask, face_contour, fill_value=1, arrayName="LabelMap")
     # mask = A < airThreshold
     # mask = keep_components_touching_side_faces(mask)
     vtkfilters.setArrayAsScalars(imageData_mask, "LabelMap")
-    return imageData_mask
+    return imageData_mask, airThreshold, face_contour
 
 
 def _build_air_contour(imageData: vtk.vtkImageData, airThreshold: float, n_shrink_wrap_iterations: int) -> vtk.vtkPolyData:
@@ -96,7 +42,7 @@ def _build_air_contour(imageData: vtk.vtkImageData, airThreshold: float, n_shrin
     Build a contour of the air in the volume data.
     """
     face_contour = vtkfilters.contourFilter(imageData, airThreshold)
-    face_contour = vtkfilters.getConnectedRegionLargest(face_contour)
+    face_contour = vtkfilters.getConnectedRegionLargest(face_contour) 
     face_contour_closed = iterative_shrink_wrap(face_contour, 
                                                 max_iterations=n_shrink_wrap_iterations, 
                                                 max_edge_length=0.01)
@@ -219,18 +165,11 @@ def _get_edge_mask(mask_array, nErode_iter):
     return edge_bw
 
 
-def smooth_at_mask_edge(imageData, imageData_mask, arrayName, arrayNameMask, n_iterations):
-    AImage = vtkfilters.getArrayAsNumpy(imageData, arrayName, RETURN_3D=True)
-    Amask = vtkfilters.getArrayAsNumpy(imageData_mask, arrayNameMask, RETURN_3D=True)
+def smooth_at_mask_edge(AImage, Amask, n_iterations):
     edge_bw = _get_edge_mask(mask_array=Amask, nErode_iter=n_iterations)
     AImageMax = rank.maximum(AImage, footprint=ball(n_iterations))
-    # image_GS = _gaussianSmooth(imageData, 2.0, 1.5)
-    # if kopare_class is not None:
-    #     kopare_class._write_intermediate_files(image_GS, f"gaussian-smooth")
-    # AGS = vtkfilters.getArrayAsNumpy(image_GS, arrayName, RETURN_3D=True)
     AImage[edge_bw] = AImageMax[edge_bw]
-    vtkfilters.setArrayFromNumpy(imageData, AImage, arrayName, SET_SCALAR=True, IS_3D=True)
-    return imageData
+    return AImage
 
     
 
@@ -301,8 +240,7 @@ def sitkHelper_ITKToVTKImage(imObj: sitk.Image, arrayName: str = 'PixelData') ->
 
 
 def biasFieldCorrection(imageData: vtk.vtkImageData, arrayName: str, numberFittingLevels: int = 4,
-                        maxIterations: int = 50, shrinkFactor: int | list[int] | None = None, maskImage: vtk.vtkImageData | None = None,
-                        arrayNameOut: str | None = None) -> vtk.vtkImageData:
+                        maxIterations: int = 50, shrinkFactor: int | list[int] | None = None, maskImage: vtk.vtkImageData | None = None) -> vtk.vtkImageData:
     """
     Bias field correction using SimpleITK.
 
@@ -318,8 +256,6 @@ def biasFieldCorrection(imageData: vtk.vtkImageData, arrayName: str, numberFitti
     Returns:
         vtkImageData object containing the bias field corrected volume data.
     """
-    if arrayNameOut is None:
-        arrayNameOut = arrayName
     inputImage = sitkHelper_VTKToITKImage(imageData, arrayName=arrayName)
     image = inputImage
     if shrinkFactor is not None:
@@ -332,10 +268,38 @@ def biasFieldCorrection(imageData: vtk.vtkImageData, arrayName: str, numberFitti
 
     corrector = sitk.N4BiasFieldCorrectionImageFilter()
     corrector.SetMaximumNumberOfIterations([maxIterations] * numberFittingLevels)
+    ## 
+    corrector.SetBiasFieldFullWidthAtHalfMaximum(0.1)
+    corrector.SetConvergenceThreshold(1e-5)
+    corrector.SetWienerFilterNoise(0.01)
+    corrector.SetNumberOfHistogramBins(128)
+    corrector.SetSplineOrder(3)
+    ##
     if maskImage is not None:
         output = corrector.Execute(image, maskImage)
     else:
         output = corrector.Execute(image)
     log_bias_field = corrector.GetLogBiasFieldAsImage(inputImage)
-    output = inputImage / sitk.Exp( log_bias_field )
-    return sitkHelper_ITKToVTKImage(output, arrayName=arrayNameOut)
+    output = inputImage / sitk.Exp( log_bias_field )            
+    output = sitk.RescaleIntensity(output)
+    output = sitk.Cast(output, sitk.sitkUInt16)
+    return sitkHelper_ITKToVTKImage(output, arrayName=arrayName)
+
+
+# =========================================================================================
+# SIGNAL INVERSION
+# =========================================================================================
+def contrastStretch_percentile(array: np.ndarray, pmin: float = 2, pmax: float = 98) -> np.ndarray:
+    # If get a zerodivision error then have a problem and should throw error.
+    A_plus = array[array>0.00001]
+    pLow, pHigh = np.percentile(A_plus, (pmin, pmax))
+    return exposure.rescale_intensity(array, in_range=(pLow, pHigh), out_range=(100, 2.0**13)).astype(np.int16)
+
+
+
+def signalLogInverse(array: np.ndarray) -> np.ndarray:
+    A_plus1 = array + 1.0
+    AI = -1.0 * np.log(A_plus1)
+    AI = AI + np.abs(np.min(AI))
+    return AI
+

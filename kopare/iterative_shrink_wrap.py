@@ -26,7 +26,7 @@ from typing import Optional
 from ngawari import vtkfilters
 import numpy as np
 import vtk
-from vtk.util import numpy_support
+from vtk.util import numpy_support   # pyright: ignore[reportMissingImports]
 
 logger = logging.getLogger(__name__)
 

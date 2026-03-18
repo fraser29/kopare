@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 
 from kopare import kopare_utils
+from kopare.sinus_detection import segment_sinus_and_airways
 
 # =========================================================================================
 # Constants and helper functions
@@ -85,6 +86,7 @@ class kopare_main:
         ii = list(vtiDict.values())[0]
         scale = self.parameters.get("Scale", 1.0)
         self.imageData_original = kopare_utils.scaleImageData(ii, scaleFactor=scale)
+        self.latest_imageData = self.imageData_original
 
     # ----------------------------------------------------------------------------------------
     # Main processing
@@ -103,48 +105,117 @@ class kopare_main:
 
         self._write_intermediate_files(self.imageData_original, f"imageData_original")
 
+        ## DATA PREPARATION STEPS
+        self._bias_field_correction()
+        A_for_inverse = vtkfilters.getArrayAsNumpy(self.latest_imageData, PixelData, RETURN_3D=True)
+        self._denoise()
+        self._median_filter()
+        self._gaussian_smooth()
 
         ## THIS IS THE MAIN FUNCTION CALL - BIAS FIELD CORRECTION, MEDIAN FILTERING, AND EXTERNAL AIR MASKING
-        image_mask_external = kopare_utils.mask_external_air(imageData=self.imageData_original, 
-                                                        median_filter_size=medFilterSize, 
+        image_mask_external, airThreshold, face_contour = kopare_utils.mask_external_air(imageData=self.imageData_original, 
                                                         arrayName=PixelData, 
-                                                        numberFittingLevels=self.parameters["BC_Number_of_fitting_levels"], 
-                                                        maxIterations=self.parameters["BC_Maximum_number_of_iterations"], 
-                                                        shrinkFactor=self.parameters["BC_Shrink_factor"], 
-                                                        denoising_alpha=self.parameters["Denoising_alpha"],
-                                                        denoising_patch_size=self.parameters["Denoising_patch_size"],
-                                                        denoising_patch_distance=self.parameters["Denoising_patch_distance"],
-                                                        n_shrink_wrap_iterations=self.parameters["n_shrink_wrap_iterations"],
-                                                        kopare_class=self)
+                                                        n_shrink_wrap_iterations=self.parameters["n_shrink_wrap_iterations"])
+        self.logger.info(f"Air threshold: {airThreshold}")
+        self._write_intermediate_files(face_contour, f"contour_external_air")
+        self._write_intermediate_files(image_mask_external, f"mask_external_air")
+
+        ## SINUS / AIRWAYS
+        Aoriginal = vtkfilters.getArrayAsNumpy(self.latest_imageData, PixelData, RETURN_3D=True)
+        Amask_external = vtkfilters.getArrayAsNumpy(image_mask_external, LabelMap, RETURN_3D=True)
+        sinus_and_airways_mask = segment_sinus_and_airways(Aoriginal,
+                                                        Amask_external, 
+                                                        method=self.parameters["Sinus_detection_method"], 
+                                                        **self.parameters["Sinus_airway_parameters"][self.parameters["Sinus_detection_method"]])
+        
+        image_sinus_airways_mask = vtkfilters.duplicateImageData(self.imageData_original)
+        vtkfilters.setArrayFromNumpy(image_sinus_airways_mask, sinus_and_airways_mask.astype(np.int16), LabelMap, IS_3D=True, SET_SCALAR=True)
+        self._write_intermediate_files(image_sinus_airways_mask, f"mask_sinus_and_airways")
 
 
+        ## INVERSION AND MASKING
+        A_inverse = kopare_utils.signalLogInverse(A_for_inverse)
+        self._write_intermediate_files(A_inverse, f"imageData_inv")
+        AI_C = kopare_utils.contrastStretch_percentile(A_inverse)
+        self._write_intermediate_files(AI_C, f"imageData_inv_contrast_stretched")
+        AI_C[Amask_external<0.5] = 0.0
+        AI_C[sinus_and_airways_mask<0.5] = 0.0
+        self._write_intermediate_files(AI_C, f"imageData_inv_masked")
 
-        # image_mask = vtkfilters.duplicateImageData(self.imageData_original)
-        # vtkfilters.setArrayFromNumpy(image_mask, mask3D_numpy, "Labels", IS_3D=True, SET_SCALAR=True)
-        self._write_intermediate_files(image_mask_external, f"imageData_mask")
+        # Smooth edges at mask boundaries
+        A_masked_smoothed = kopare_utils.smooth_at_mask_edge(AI_C, 
+                                                                 Amask_external, 
+                                                                 n_iterations=self.parameters["EdgeSmoothing_nIterations"])
+        self._write_intermediate_files(A_masked_smoothed, f"imageData_masked_smoothed")
+        A_masked_smoothed[Amask_external<0.5] = 0.0
+        self._write_intermediate_files(A_masked_smoothed, f"imageData_pseudoCT")
 
-
-        A = vtkfilters.getArrayAsNumpy(self.imageData_original, PixelData)
-        AME = vtkfilters.getArrayAsNumpy(image_mask_external, LabelMap)
-        A[AME<0.5] = 0.0
+        ## WRITE PSEUDOCT DICOMS
         image_masked = vtkfilters.duplicateImageData(self.imageData_original)
-        vtkfilters.setArrayFromNumpy(image_masked, A, PixelData, SET_SCALAR=True)
-        self._write_intermediate_files(image_masked, f"imageData_masked")
-
-        # # TODO: internal air mask, invert, smooth edges, write modified DICOMS 
-        # image_masked_smoothed = kopare_utils.smooth_at_mask_edge(image_masked, 
-        #                                                          image_mask_external, 
-        #                                                          PixelData, 
-        #                                                          LabelMap, 
-        #                                                          n_iterations=self.parameters["EdgeSmoothing_nIterations"])
-        # self._write_intermediate_files(image_masked_smoothed, f"imageData_masked_smoothed")
+        vtkfilters.setArrayFromNumpy(image_masked, A_masked_smoothed, PixelData, IS_3D=True, SET_SCALAR=True)
+        self.dcmSeries.sortBySlice_InstanceNumber()
+        tagUpdateDict={"SeriesNumber": int(self.dcmSeries[0].getTagValue("SeriesNumber"))*1000, "SeriesDescription": "Kopare PseudoCT"}
+        dcmDirOut = spydcm.dcmTK.writeVTIToDicoms(image_masked, 
+                                                    self.dcmSeries[0], 
+                                                    outputDir=self.output_dir, 
+                                                    tagUpdateDict=tagUpdateDict)
+        self.logger.info(f"Written {dcmDirOut}")
 
         return 0
 
-    def _write_intermediate_files(self, imageData: vtk.vtkImageData, output_prefix: str) -> None:
+
+    def _denoise(self):
+        if self.parameters["Denoising_alpha"] > 0:
+            A = vtkfilters.getArrayAsNumpy(self.latest_imageData, PixelData, RETURN_3D=True)
+            A_DN = kopare_utils.denoise3DA(A, self.parameters["Denoising_alpha"], self.parameters["Denoising_patch_size"], self.parameters["Denoising_patch_distance"])
+            vtkfilters.setArrayFromNumpy(self.latest_imageData, A_DN, PixelData, IS_3D=True, SET_SCALAR=True)
+            if self.write_intermediate_files:
+                self._write_intermediate_files(self.latest_imageData, f"imageData_denoised")
+        else:
+            self.logger.warning("Denoising not performed as Denoising_alpha is 0")
+
+
+    def _gaussian_smooth(self):
+        if self.parameters["Gaussian_smoothing_sigma"] > 0:
+            imageData_smoothed = kopare_utils.gaussianSmooth(self.latest_imageData, self.parameters["Gaussian_smoothing_sigma"], self.parameters["Gaussian_smoothing_radius_factor"])
+            if self.write_intermediate_files:
+                self._write_intermediate_files(imageData_smoothed, f"imageData_smoothed")
+            self.latest_imageData = imageData_smoothed
+        else:
+            self.logger.warning("Gaussian smoothing not performed as Gaussian_smoothing_sigma is 0")
+
+
+    def _median_filter(self):
+        if self.parameters["Median_filter_size"] > 0:
+            imageData_median = vtkfilters.filterVtiMedian(vtiObj=self.latest_imageData, filterKernalSize=self.parameters["Median_filter_size"])
+            if self.write_intermediate_files:
+                self._write_intermediate_files(imageData_median, f"imageData_median")
+            self.latest_imageData = imageData_median
+        else:
+            self.logger.warning("Median filtering not performed as Median_filter_size is 0")
+
+
+    def _bias_field_correction(self, inputData=None):
+        if inputData is None:
+            inputData = self.latest_imageData
+        if self.parameters["BC_Number_of_fitting_levels"] > 0:
+            imageData_BC = kopare_utils.biasFieldCorrection(inputData, PixelData, self.parameters["BC_Number_of_fitting_levels"], self.parameters["BC_Maximum_number_of_iterations"], self.parameters["BC_Shrink_factor"])
+            if self.write_intermediate_files:
+                self._write_intermediate_files(imageData_BC, f"imageData_BC")
+            self.latest_imageData = imageData_BC
+        else:
+            self.logger.warning("Bias field correction not performed as BC_Number_of_fitting_levels is 0")
+
+
+
+
+    def _write_intermediate_files(self, imageData: vtk.vtkImageData | np.ndarray, output_prefix: str) -> None:
         """Write intermediate files to output directory."""
         if not self.write_intermediate_files:
             return
+        if isinstance(imageData, np.ndarray):
+            imageData = vtkfilters.duplicateImageData(self.latest_imageData)
+            vtkfilters.setArrayFromNumpy(imageData, imageData, PixelData, IS_3D=True, SET_SCALAR=True)
         output_format = self.parameters["Output_format"].lower()
         if not output_format.startswith("."):
             output_format = "." + output_format
