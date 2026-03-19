@@ -1,6 +1,7 @@
 from ngawari import vtkfilters
 import vtk
 import numpy as np
+import logging
 from skimage.filters import threshold_otsu, rank
 from skimage.measure import label
 from skimage import img_as_float
@@ -8,8 +9,8 @@ from skimage.morphology import binary_erosion, ball
 from skimage.restoration import denoise_nl_means, estimate_sigma
 from skimage import exposure
 import SimpleITK as sitk
-from kopare.iterative_shrink_wrap import iterative_shrink_wrap
 
+logger = logging.getLogger("kopare")
 
 def mask_external_air(imageData: vtk.vtkImageData, 
                     arrayName: str,
@@ -25,16 +26,19 @@ def mask_external_air(imageData: vtk.vtkImageData,
     Returns:
         mask: numpy array containing the mask.
     """
-
+    if n_shrink_wrap_iterations > 5:
+        n_shrink_wrap_iterations = 5
+        logger.warning(f"Set n_shrink_wrap_iterations to {n_shrink_wrap_iterations} (to avoid memory issues)")
     A = vtkfilters.getArrayAsNumpy(imageData, arrayName, RETURN_3D=True)
     airThreshold = _get_air_threshold_from_slices(A)
+    logger.debug(f"Air threshold is {airThreshold}")
     face_contour = _build_air_contour(imageData, airThreshold, n_shrink_wrap_iterations)
     imageData_mask = vtkfilters.duplicateImageData(imageData)
     vtkfilters.filterMaskImageBySurface(imageData_mask, face_contour, fill_value=1, arrayName="LabelMap")
     # mask = A < airThreshold
     # mask = keep_components_touching_side_faces(mask)
     vtkfilters.setArrayAsScalars(imageData_mask, "LabelMap")
-    return imageData_mask, airThreshold, face_contour
+    return imageData_mask
 
 
 def _build_air_contour(imageData: vtk.vtkImageData, airThreshold: float, n_shrink_wrap_iterations: int) -> vtk.vtkPolyData:
@@ -43,10 +47,92 @@ def _build_air_contour(imageData: vtk.vtkImageData, airThreshold: float, n_shrin
     """
     face_contour = vtkfilters.contourFilter(imageData, airThreshold)
     face_contour = vtkfilters.getConnectedRegionLargest(face_contour) 
-    face_contour_closed = iterative_shrink_wrap(face_contour, 
-                                                max_iterations=n_shrink_wrap_iterations, 
-                                                max_edge_length=0.01)
+    initial_wrap = vtkfilters.shrinkWrapData(face_contour)
+    initial_wrap = mark_planar_faces(initial_wrap)
+    face_contour_closed = iterative_shrink_wrap(face_contour, wrapped_surface=initial_wrap,
+                                                max_iterations=n_shrink_wrap_iterations)
     return face_contour_closed
+
+
+def mark_planar_faces(shrinkwrap: vtk.vtkPolyData,
+                      planar_angle_threshold_deg: float = 10.0,
+                      planar_percent_threshold: float = 35.0,
+                      within_bounds_rel_threshold: float = 0.1) -> vtk.vtkPolyData:
+    """
+    """
+    n_cells = shrinkwrap.GetNumberOfCells()
+    face_labels = np.zeros(n_cells, dtype=np.int32)
+    face_fix = np.zeros(n_cells, dtype=np.int32)
+    centroids, norms = vtkfilters.getPolyDataCenterPtNormal(shrinkwrap)
+    cp = np.array(shrinkwrap.GetCenter())
+    bounds = shrinkwrap.GetBounds()
+    sides = {1: [0, [-1,0,0]],
+             2: [0, [1,0,0]],
+             3: [1, [0,-1,0]],
+             4: [1, [0,1,0]],
+             5: [2, [0,0,-1]],
+             6: [2, [0,0,1]]
+             }
+    bounds_pts = [cp for _ in range(6)]
+    for i in range(6):
+        bounds_pts[i][sides[i+1][0]] = bounds[i]
+    max_bound = max([bounds[1]-bounds[0], bounds[3]-bounds[2], bounds[5]-bounds[4]])
+    plane_dist_thresh = within_bounds_rel_threshold * max_bound
+    logger.debug(f"Shrinkwrap: Maximum bound = {max_bound}. Plane distance threshold = {plane_dist_thresh:0.1f}")
+
+    side_counts = {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0}
+    for k1 in range(n_cells):
+        for k2 in range(6):
+            angle = vtkfilters.ftk.angleBetween2Vec(norms[k1], sides[k2+1][1], RETURN_DEGREES=True)
+            plane_dist = vtkfilters.ftk.distanceToPlane(centroids[k1], sides[k2+1][1], bounds_pts[k2])
+            if plane_dist < plane_dist_thresh: # Close to "boundary"
+                if angle < 30: # Face normal is general orthogonal direction
+                    side_counts[k2+1] += 1
+                if angle < planar_angle_threshold_deg: # Face normal is true orthogonal direction
+                    face_labels[k1] = k2+1
+    logger.debug(f"Total faces on each side: {side_counts}")
+    for k1 in side_counts.keys():
+        if k1 == 0:
+            continue
+        side_counts[k1] = int(np.sum(face_labels==k1) / float(side_counts[k1]) * 100.0)
+    logger.debug(f"Percent planar faces on each side: {side_counts}")
+    for k1 in range(n_cells):
+        if side_counts[face_labels[k1]] > planar_percent_threshold:
+            face_fix[k1] = 1.0
+    vtkfilters.addNpArray(shrinkwrap, face_labels, "Planar", pointData=False)
+    vtkfilters.addNpArray(shrinkwrap, face_fix, "FIXED", pointData=False)
+    shrinkwrap = vtkfilters.cellToPointData(shrinkwrap)
+    return shrinkwrap
+
+
+def _subdivide(polydata, nSubdivisions: int = 2):
+    filter = vtk.vtkLinearSubdivisionFilter()
+    filter.SetInputData(polydata)
+    filter.SetNumberOfSubdivisions(nSubdivisions)
+    filter.Update()
+    return filter.GetOutput()
+
+
+def iterative_shrink_wrap(target_surface: vtk.vtkPolyData,
+                            wrapped_surface: vtk.vtkPolyData,
+                            max_iterations: int = 5,
+                            fixed_point_threshold: float = 0.3 ):
+    
+    c0 = 0
+    for c0 in range(max_iterations):
+        c0 += 1
+        wrapped_surface = _subdivide(wrapped_surface, 1)
+        pts_orig = vtkfilters.getPtsAsNumpy(wrapped_surface)
+        logger.debug(f"Iterative shrink wrap, iteration {c0}, number of points {len(pts_orig)}")
+        pts_fixed = vtkfilters.getArrayAsNumpy(wrapped_surface, "FIXED") > fixed_point_threshold
+        wrapped_surface = vtkfilters.shrinkWrapData(target_surface, wrapped_surface)
+        for k1 in range(wrapped_surface.GetNumberOfPoints()):
+            if pts_fixed[k1]:
+                wrapped_surface.GetPoints().SetPoint(k1, pts_orig[k1])
+    else:
+        logger.warning(f"iterative_shrink_wrap reached {max_iterations} max_iterations without full convergence.")
+    return wrapped_surface
+
 
 
 def _get_air_threshold_from_slices(Array3D: np.ndarray) -> float:

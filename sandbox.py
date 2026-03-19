@@ -2,18 +2,19 @@ import numpy as np
 from kopare.sinus_detection import segment_sinus_and_airways
 from kopare.sinus_detection import grid_search_algorithms
 from kopare.sinus_detection import benchmark_algorithms
-
+import datetime
 from kopare.kopare import kopare_main, load_parameters, DEFAULT_PARAMETER_FILE
 from kopare import kopare_utils
 from ngawari import fIO, vtkfilters
 import os
+import vtk
 import matplotlib.pyplot as plt
 from spydcmtk import spydcm
 
 PixelData = "PixelData"
 LabelMap = "LabelMap"
 
-ROOT_DIR = "/Volume/WORK/KISPI/KMRB/"
+ROOT_DIR = "/mnt/x-bigdata/MRI-Proc/fraser/PROJECTS/BlackBone"
 
 def read_subject_data(N):
     internal_air_file = f"{ROOT_DIR}//BB{N:06d}/PROCESSED/internal-air.vti"
@@ -166,8 +167,9 @@ def test_inversion():
     print(fOut)
 
 
-def test_wrap():
-    iif = f"{ROOT_DIR}/BB000001/PROCESSED/imageData_smooth.vti"
+
+def test_wrap(N):
+    iif = f"{ROOT_DIR}/BB{N:06d}/PROCESSED/imageData_smooth.vti"
     ii = fIO.readVTKFile(iif)
     face_contour = vtkfilters.contourFilter(ii, 100.0)
     face_contour = vtkfilters.getConnectedRegionLargest(face_contour)
@@ -175,20 +177,14 @@ def test_wrap():
 
     # Detect and label any planar cut faces on both the shrinkwrap and the
     # original isosurface contour.
-    for tag, mesh in [("sw", sw)]:
-        labeled, is_cut, cuts = kopare_utils.detect_and_label_cut_faces(mesh)
-        print(f"[{tag}] is_cut={is_cut}  n_cuts_found={len(cuts)}")
-        for c in cuts:
-            print(f"  cut {c['label']}: flat_fraction={c['flat_area_fraction']:.3f}"
-                  f"  n_cells={c['n_cut_cells']}"
-                  f"  normal={np.round(c['plane_normal'], 3)}")
-        out_path = iif[:-4] + f"_{tag}_cut_labeled.vtp"
-        fOut = fIO.writeVTKFile(labeled, out_path)
-        print(f"  Written: {fOut}")
+    sw_faces = kopare_utils.mark_planar_faces(sw)
+    fOut = fIO.writeVTKFile(sw_faces, f"{ROOT_DIR}/BB{N:06d}/PROCESSED/head_wrap.vtp")
+    print(f"Written {fOut}")
 
 
 
 if __name__ == "__main__":
+    print(f"START: {datetime.datetime.now()}")
     # run_test(3)
     # run_test(4)
     # benchmark()
@@ -197,4 +193,5 @@ if __name__ == "__main__":
     # run_test_B(3)
     # test_BC()
     # test_inversion()
-    test_wrap()
+    test_wrap(3)
+    print(f"FINISH: {datetime.datetime.now()}")

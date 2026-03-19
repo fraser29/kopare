@@ -46,12 +46,13 @@ Possible parameters:
 - "Denoising_patch_distance": Patch distance for the non-local means denoising. [default=5]
 - "Gaussian_smoothing_sigma": Sigma parameter for the Gaussian smoothing. [default=2.5]
 - "Gaussian_smoothing_radius_factor": Radius factor for the Gaussian smoothing. [default=1.5]
-- "n_shrink_wrap_iterations": Number of shrink wrap iterations for the face mask. [default=6]
 - "EdgeSmoothing_nIterations": Number of iterations for the edge smoothing. [default=7]
+- "n_shrink_wrap_iterations": Number of shrink wrap iterations for external air masking. [default=4], # NOTE: Capped at 5 internally
+- "Sinus_detection_method": Sinus and airway detection method to employ (leave empty for none). [default=""],
 
 ## Status
 
-Beta. 
+Production, first release. 
 
 ## Roadmap: 
 
@@ -59,8 +60,8 @@ Beta.
 - [x] Advanced masking
     - [x] Denoising - e.g. non-local means (in sci-kit image)
 - [x] Inversion
-- [ ] Boundary smoothing
-- [ ] Write out DICOMS
+- [x] Boundary smoothing
+- [x] Write out DICOMS
 
 
 

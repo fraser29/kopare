@@ -21,7 +21,7 @@ from kopare.sinus_detection import segment_sinus_and_airways
 # =========================================================================================
 THIS_DIR = Path(__file__).parent
 DEFAULT_PARAMETER_FILE = THIS_DIR / "kopare_parameters.json"
-DEFAULT_LOGGER_NAME = "kopare"
+DEFAULT_LOGGER_NAME = "kopare" # DO NOT CHANGE
 PERMITTED_OUTPUT_FORMATS = [".mha", ".vti", ".nii", ".nii.gz"]
 PixelData = "PixelData"
 LabelMap = "LabelMap"
@@ -113,24 +113,15 @@ class kopare_main:
         self._gaussian_smooth()
 
         ## THIS IS THE MAIN FUNCTION CALL - BIAS FIELD CORRECTION, MEDIAN FILTERING, AND EXTERNAL AIR MASKING
-        image_mask_external, airThreshold, face_contour = kopare_utils.mask_external_air(imageData=self.imageData_original, 
+        image_mask_external = kopare_utils.mask_external_air(imageData=self.latest_imageData, 
                                                         arrayName=PixelData, 
-                                                        n_shrink_wrap_iterations=self.parameters["n_shrink_wrap_iterations"])
-        self.logger.info(f"Air threshold: {airThreshold}")
-        self._write_intermediate_files(face_contour, f"contour_external_air")
+                                                        n_shrink_wrap_iterations=self.parameters.get("n_shrink_wrap_iterations", 5))
+        # self._write_intermediate_files(face_contour, f"contour_external_air")
         self._write_intermediate_files(image_mask_external, f"mask_external_air")
 
         ## SINUS / AIRWAYS
-        Aoriginal = vtkfilters.getArrayAsNumpy(self.latest_imageData, PixelData, RETURN_3D=True)
         Amask_external = vtkfilters.getArrayAsNumpy(image_mask_external, LabelMap, RETURN_3D=True)
-        sinus_and_airways_mask = segment_sinus_and_airways(Aoriginal,
-                                                        Amask_external, 
-                                                        method=self.parameters["Sinus_detection_method"], 
-                                                        **self.parameters["Sinus_airway_parameters"][self.parameters["Sinus_detection_method"]])
-        
-        image_sinus_airways_mask = vtkfilters.duplicateImageData(self.imageData_original)
-        vtkfilters.setArrayFromNumpy(image_sinus_airways_mask, sinus_and_airways_mask.astype(np.int16), LabelMap, IS_3D=True, SET_SCALAR=True)
-        self._write_intermediate_files(image_sinus_airways_mask, f"mask_sinus_and_airways")
+        sinus_and_airways_mask = self._sinus_and_airways_detection(Amask_external)
 
 
         ## INVERSION AND MASKING
@@ -154,8 +145,10 @@ class kopare_main:
         image_masked = vtkfilters.duplicateImageData(self.imageData_original)
         vtkfilters.setArrayFromNumpy(image_masked, A_masked_smoothed, PixelData, IS_3D=True, SET_SCALAR=True)
         self.dcmSeries.sortBySlice_InstanceNumber()
-        tagUpdateDict={"SeriesNumber": int(self.dcmSeries[0].getTagValue("SeriesNumber"))*1000, "SeriesDescription": "Kopare PseudoCT"}
-        dcmDirOut = spydcm.dcmTK.writeVTIToDicoms(image_masked, 
+        tagUpdateDict={"SeriesNumber": int(self.dcmSeries.getTag("SeriesNumber"))*1000, "SeriesDescription": [0x0008103e, "LO", "Kopare PseudoCT"]}
+        scale = self.parameters.get("Scale", 1.0)
+        image_masked_s = kopare_utils.scaleImageData(image_masked, scaleFactor=1.0/scale)
+        dcmDirOut = spydcm.dcmTK.writeVTIToDicoms(image_masked_s, 
                                                     self.dcmSeries[0], 
                                                     outputDir=self.output_dir, 
                                                     tagUpdateDict=tagUpdateDict)
@@ -206,7 +199,21 @@ class kopare_main:
         else:
             self.logger.warning("Bias field correction not performed as BC_Number_of_fitting_levels is 0")
 
-
+    def _sinus_and_airways_detection(self, Amask_external):        
+        sinus_and_airways_mask = np.ones(Amask_external.shape) # Default in case do not run
+        if self.parameters["Sinus_detection_method"] and self.parameters["Sinus_airway_parameters"][self.parameters["Sinus_detection_method"]]:
+            Aoriginal = vtkfilters.getArrayAsNumpy(self.latest_imageData, PixelData, RETURN_3D=True)
+            sinus_and_airways_mask = segment_sinus_and_airways(Aoriginal,
+                                                            Amask_external, 
+                                                            method=self.parameters["Sinus_detection_method"], 
+                                                            **self.parameters["Sinus_airway_parameters"][self.parameters["Sinus_detection_method"]])
+            
+            image_sinus_airways_mask = vtkfilters.duplicateImageData(self.imageData_original)
+            vtkfilters.setArrayFromNumpy(image_sinus_airways_mask, sinus_and_airways_mask.astype(np.int16), LabelMap, IS_3D=True, SET_SCALAR=True)
+            self._write_intermediate_files(image_sinus_airways_mask, f"mask_sinus_and_airways")
+        else:
+            self.logger.warning(f"Sinus and airways detection not performed. Detection method unknown: {self.parameters['Sinus_detection_method']}")
+        return sinus_and_airways_mask
 
 
     def _write_intermediate_files(self, imageData: vtk.vtkImageData | np.ndarray, output_prefix: str) -> None:
@@ -214,8 +221,9 @@ class kopare_main:
         if not self.write_intermediate_files:
             return
         if isinstance(imageData, np.ndarray):
-            imageData = vtkfilters.duplicateImageData(self.latest_imageData)
-            vtkfilters.setArrayFromNumpy(imageData, imageData, PixelData, IS_3D=True, SET_SCALAR=True)
+            imageDataD = vtkfilters.duplicateImageData(self.latest_imageData)
+            vtkfilters.setArrayFromNumpy(imageDataD, imageData, PixelData, IS_3D=True, SET_SCALAR=True)
+            imageData = imageDataD
         output_format = self.parameters["Output_format"].lower()
         if not output_format.startswith("."):
             output_format = "." + output_format

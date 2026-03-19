@@ -5,8 +5,7 @@ inside a known body mask where:
     - body_mask == 1: inside body
     - body_mask == 0: external air / outside body
 
-Multiple candidate algorithms are provided so they can be benchmarked against
-manual segmentations.
+candidate algorithms are provided to benchmark against manual segmentations.
 """
 
 from __future__ import annotations
