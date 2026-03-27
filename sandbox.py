@@ -14,7 +14,7 @@ from spydcmtk import spydcm
 PixelData = "PixelData"
 LabelMap = "LabelMap"
 
-ROOT_DIR = "/mnt/x-bigdata/MRI-Proc/fraser/PROJECTS/BlackBone"
+ROOT_DIR = "/Volume/PROJECTS/BlackBone"
 
 def read_subject_data(N):
     internal_air_file = f"{ROOT_DIR}//BB{N:06d}/PROCESSED/internal-air.vti"
